@@ -833,7 +833,35 @@ function applyAppearance(){
   els.viewer.style.background=t.background;
   els.fontValue.textContent=`${fontSize}%`;
 }
-function setFont(value){ fontSize=Math.max(60,Math.min(200,Number(value)||100)); els.fontSlider.value=fontSize; applyAppearance(); localStorage.setItem('epub-reader:fontSize',String(fontSize)); }
+// ponytail: 改字級會讓整章重排，但 epub.js 只保留舊的「像素位移」，所以內容會相對滑掉
+// （實測：在第 18 段按 + 之後畫面變成第 9 段）。而且 fontSize 重排不會觸發任何 rendition 事件，
+// 所以這裡用「版面寬度連續兩次量到相同」當作重排完成的訊號，再 display 回同一個 CFI。
+let fontAnchor=null,fontAnchorTimer=0,fontAnchorStart=0,fontAnchorTries=0;
+function restoreFontAnchor(){
+  if(!fontAnchor||!rendition)return;
+  const anchor=fontAnchor;
+  if(Date.now()-fontAnchorStart<550){ fontAnchorTimer=setTimeout(restoreFontAnchor,100); return; }   // 等整章重排完（實測 <550ms 會被重排蓋掉）
+  rendition.display(anchor).catch(()=>{});
+  if(fontAnchorTries<2){
+    fontAnchorTries++;
+    fontAnchorTimer=setTimeout(()=>{
+      if(!fontAnchor)return;
+      if(rendition.currentLocation()?.start?.cfi!==anchor) restoreFontAnchor();
+      else{ fontAnchor=null; fontAnchorTries=0; }
+    },420);
+  }else{ fontAnchor=null; fontAnchorTries=0; }
+}
+function setFont(value){
+  fontSize=Math.max(60,Math.min(200,Number(value)||100));
+  els.fontSlider.value=fontSize;
+  const anchor=fontAnchor||rendition?.currentLocation()?.start?.cfi;   // 連續拖動時沿用第一次的位置
+  applyAppearance();
+  if(anchor){
+    fontAnchor=anchor; fontAnchorStart=Date.now(); fontAnchorTries=0;
+    clearTimeout(fontAnchorTimer); fontAnchorTimer=setTimeout(restoreFontAnchor,100);
+  }
+  localStorage.setItem('epub-reader:fontSize',String(fontSize));
+}
 // ponytail: 字典樹改為用到才建（原本開檔就同步建兩棵約 1MB 的 Trie，手機會卡住數秒）
 function getConverter(){
   if(!window.OpenCC)return null;
