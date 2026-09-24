@@ -1283,16 +1283,22 @@ $('dropZone').addEventListener('drop',e=>{e.preventDefault();readFile(e.dataTran
 els.prev.addEventListener('click',()=>{stopSpeech();return rendition?.prev().catch(()=>toast('無法翻到上一頁'));});
 els.next.addEventListener('click',()=>{stopSpeech();return rendition?.next().catch(()=>toast('無法翻到下一頁'));});
 $('homeBtn').addEventListener('click',()=>rendition?.display());
+// ponytail: 手機上「側欄／搜尋」按鈕原本只會開、不會關（第二下沒反應），改成同一顆按鈕再按一次就收合。
+function toggleSidePanel(panelId,focusSearch=false){
+  const isMobile=matchMedia('(max-width:800px)').matches;
+  const panel=document.getElementById(panelId);
+  if(isMobile&&els.sidebar.classList.contains('open')&&panel?.classList.contains('active')){ setMobileSidebar(false); return; }
+  openSidePanel(panelId,focusSearch);
+}
 $('sidebarToggle').addEventListener('click',()=>{
+  if(matchMedia('(max-width:800px)').matches){ toggleSidePanel('catalogPanel'); return; }
   openSidePanel('catalogPanel');
-  if(!matchMedia('(max-width:800px)').matches){
-    els.shell.classList.toggle('nav-collapsed');
-    // ponytail: 寬度變了要 resize，否則 epub.js 重排會跳回章節開頭
-    const cfi=rendition?.currentLocation()?.start?.cfi;
-    requestAnimationFrame(()=>{ rendition?.resize(); if(cfi) rendition.display(cfi); });
-  }
+  els.shell.classList.toggle('nav-collapsed');
+  // ponytail: 寬度變了要 resize，否則 epub.js 重排會跳回章節開頭
+  const cfi=rendition?.currentLocation()?.start?.cfi;
+  requestAnimationFrame(()=>{ rendition?.resize(); if(cfi) rendition.display(cfi); });
 });
-$('searchToggle').addEventListener('click',()=>openSidePanel('searchPanel',true));
+$('searchToggle').addEventListener('click',()=>toggleSidePanel('searchPanel',true));
 $('sidebarClose').addEventListener('click',closeSidebarOnMobile); $('mobileBackdrop').addEventListener('click',closeSidebarOnMobile);
 document.querySelectorAll('.side-tab').forEach(btn=>btn.addEventListener('click',()=>openSidePanel(btn.dataset.panel,btn.dataset.panel==='searchPanel')));
 els.fontSlider.addEventListener('input',e=>setFont(e.target.value));
