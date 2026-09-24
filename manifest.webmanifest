@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "墨閱 EPUB 閱讀器",
+  "short_name": "墨閱",
+  "description": "完全離線、支援全文搜尋與系統朗讀的 EPUB 閱讀器",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#e9eee9",
+  "theme_color": "#315b52",
+  "icons": [
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
