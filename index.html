@@ -585,7 +585,7 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
 .toast{bottom:calc(18px + var(--safe-bottom));max-width:calc(100vw - 24px);text-align:center}
 @supports(height:100svh){body{min-height:100svh}}
 @media(max-width:800px){
-  :root{--reader-height:calc(var(--app-height) - 178px);min-height:0}
+  :root{--reader-height:calc(var(--app-height) - 250px - var(--safe-top) - var(--safe-bottom));min-height:0}
   body{padding-left:var(--safe-left);padding-right:var(--safe-right)}
   .app{width:100%;padding:calc(4px + var(--safe-top)) 6px calc(8px + var(--safe-bottom))}
   .header{position:sticky;top:0;z-index:30;margin-bottom:6px;background:rgba(255,254,250,.96);box-shadow:0 5px 18px rgba(35,62,55,.08)}
@@ -801,13 +801,19 @@ function updateActiveToc(href){
 }
 function themeCss(name=currentTheme){
   const t=themeStyles[name]||themeStyles.default;
-  return `:root{color-scheme:${name==='night'?'dark':'light'}!important}html,body{background:${t.background}!important;color:${t.color}!important}body,body *{border-color:${t.muted}55}p,div,span,li,blockquote,section,article,h1,h2,h3,h4,h5,h6{color:inherit}a,a:visited{color:${t.link}!important}hr{border-color:${t.muted}!important}table,th,td{background-color:transparent!important;color:inherit!important}`;
+  // ponytail: epub.js 每 select 一次主題就往 iframe head 追加一個 style（id=epubjs-inserted-css-<主題>），
+  // 切回淺色時夜間那一條還留在最後，兩邊都 !important 就由它勝出 → 夜間切不回來。
+  // 這裡用 html[data-mo-theme] 提高專一性，讓我們的規則一定贏（applyThemeToDocument 也會移除 epub.js 的主題 style）。
+  const s='html[data-mo-theme]';
+  return `${s}{color-scheme:${name==='night'?'dark':'light'}!important}${s},${s} body{background:${t.background}!important;color:${t.color}!important}body,body *{border-color:${t.muted}55}p,div,span,li,blockquote,section,article,h1,h2,h3,h4,h5,h6{color:inherit}${s} a,${s} a:visited{color:${t.link}!important}hr{border-color:${t.muted}!important}table,th,td{background-color:transparent!important;color:inherit!important}`;
 }
 function applyThemeToDocument(doc,name=currentTheme){
   if(!doc?.head)return;
+  for(const theme of Object.keys(themeStyles)){ const stale=doc.getElementById('epubjs-inserted-css-'+theme); if(stale)stale.remove(); }
   let style=doc.getElementById('mo-reader-theme-override');
-  if(!style){style=doc.createElement('style');style.id='mo-reader-theme-override';doc.head.append(style);}
+  if(!style){style=doc.createElement('style');style.id='mo-reader-theme-override';}
   style.textContent=themeCss(name);
+  doc.head.append(style);
   doc.documentElement.dataset.moTheme=name;
 }
 function setupThemes(){
@@ -980,7 +986,17 @@ function setupReaderInteractions(contents){
   const doc=contents.document;if(!doc||doc.__mobileInteractionReady)return;doc.__mobileInteractionReady=true;
   doc.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const t=e.touches[0];touchStart={x:t.clientX,y:t.clientY,time:Date.now()};},{passive:true});
   doc.addEventListener('touchend',e=>{if(!touchStart||!e.changedTouches.length)return;const t=e.changedTouches[0],dx=t.clientX-touchStart.x,dy=t.clientY-touchStart.y,dt=Date.now()-touchStart.time;touchStart=null;if(dt<700&&Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.35){dx<0?rendition.next():rendition.prev();}},{passive:true});
-  doc.addEventListener('click',e=>{if(!matchMedia('(max-width:800px)').matches||e.target.closest('a,button,input,select,textarea'))return;const x=e.clientX/(doc.documentElement.clientWidth||1);if(x<.22)rendition.prev();else if(x>.78)rendition.next();});
+  doc.addEventListener('click',e=>{
+    if(!matchMedia('(max-width:800px)').matches||e.target.closest('a,button,input,select,textarea'))return;
+    // ponytail: 分頁是「橫向分欄」，iframe 的 documentElement.clientWidth 是整章總寬（實測可達 9000px+），
+    // 用它當分母會讓每一次點擊都落在最左側 → 不管點哪裡都變成「上一頁」。
+    // 要用「目前可見那一欄」的位移與寬度來算比例。
+    const container=rendition?.manager?.container||null;
+    const scrollLeft=container?container.scrollLeft:0;
+    const width=(container?container.clientWidth:0)||doc.body.clientWidth||doc.documentElement.clientWidth||1;
+    const x=(e.clientX-scrollLeft)/width;
+    if(x<.22)rendition.prev();else if(x>.78)rendition.next();
+  });
 }
 
 // ===== 朗讀：使用裝置內建 Web Speech API，不上傳書籍內容 =====
