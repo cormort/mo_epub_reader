@@ -23,3 +23,17 @@ python3 -m http.server 8080
 ```
 
 開啟 `http://localhost:8080/`。
+
+## 版本更新日誌
+
+- `changelog.html`：手機友善的更新日誌頁面。
+- `changelog.json`：結構化版本資料，新增版本時優先修改此檔。
+- `version.json`：部署時由 GitHub Actions 自動產生，包含 commit SHA、應用版本與建置時間。
+
+## 快取策略
+
+- 導覽與版本資料：Network First，離線時回退快取。
+- HTML、Script、Style、Manifest：Stale While Revalidate。
+- 圖示：Cache First。
+- 每次部署以 commit SHA 建立新的 App Shell 與 Runtime Cache；啟用時清除舊版墨閱快取。
+- EPUB 檔案由使用者從本機選取，不寫入 Service Worker Cache。

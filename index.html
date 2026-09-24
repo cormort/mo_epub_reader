@@ -623,12 +623,13 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
 </style>
 
 <link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
 <meta name="theme-color" content="#315b52">
 <meta name="application-name" content="墨閱">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="墨閱">
-<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 </head>
 <body>
 <div class="ambient ambient-one" aria-hidden="true"></div><div class="ambient ambient-two" aria-hidden="true"></div>
@@ -636,12 +637,12 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
   <header class="header card">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">墨</div>
-      <div><div class="eyebrow">OFFLINE EPUB READER</div><h1>墨閱</h1><p>安靜、專注且完全離線的閱讀空間</p></div>
+      <div><div class="eyebrow">OFFLINE EPUB READER</div><h1>墨閱</h1><p>安靜、專注且完全離線的閱讀空間 · v2.1.0</p></div>
     </div>
     <div class="file-actions">
       <label class="file-label" for="epubFile"><span aria-hidden="true">＋</span> 開啟 EPUB</label>
       <input type="file" id="epubFile" accept=".epub,application/epub+zip">
-      <span class="privacy-badge"><span class="status-dot"></span> 本機處理，不上傳</span>
+      <span class="privacy-badge"><span class="status-dot"></span> 本機處理，不上傳</span><a class="btn secondary" href="./changelog.html" title="查看版本更新日誌">更新日誌</a>
     </div>
   </header>
   <section id="welcomePanel" class="welcome-panel card">
