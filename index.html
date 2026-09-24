@@ -552,7 +552,7 @@ body{position:relative;overflow-x:hidden;background:linear-gradient(145deg,#eef3
 #fontDown,#fontUp{color:#fff;background:var(--primary)}#fontSizeValue{color:var(--primary)}#fontSizeSlider{accent-color:var(--accent)}
 .reader-shell{border-radius:20px;background:rgba(255,254,250,.94)}.reader-shell.show{grid-template-columns:300px minmax(0,1fr)}
 .sidebar{height:var(--reader-height);padding:22px 17px;border-right:1px solid #e3e6e1;background:linear-gradient(180deg,#f9faf7,#f1f4f0)}.sidebar-section+.sidebar-section{margin-top:30px}.side-heading{display:flex;align-items:end;justify-content:space-between;margin:0 4px 12px;padding-bottom:10px;border-bottom:1px solid #dce2dc}.sidebar h2{margin:0;padding:0;border:0;color:#304f47;font-family:"Noto Serif TC","PMingLiU",serif;font-size:1.02rem}.side-heading span{color:#9aa59f;font-size:.58rem;font-weight:800;letter-spacing:.14em}
-.toc-link,.bookmark-link{margin:2px 0;padding:9px 11px;border-radius:9px;color:#53615d;font-size:.85rem}.toc-link:hover,.bookmark-link:hover{color:var(--primary);background:#e5ece7}.toc-link.active{color:#fff;background:linear-gradient(135deg,var(--primary),#47796d);box-shadow:0 6px 15px rgba(49,91,82,.17)}.clear-button{width:100%;margin-top:12px;padding:9px;border:1px solid #e3c7c1;border-radius:9px;color:#a34e43;background:#fff8f6;font-size:.78rem;font-weight:700}.clear-button:hover{background:#a34e43;color:#fff}
+.toc-link,.bookmark-link{margin:2px 0;padding:9px 11px;border-radius:9px;color:#53615d;font-size:.85rem}.toc-link:hover,.bookmark-link:hover{color:var(--primary);background:#e5ece7}.toc-link.active{color:#fff;background:linear-gradient(135deg,var(--primary),#47796d);box-shadow:0 6px 15px rgba(49,91,82,.17)}.clear-button{width:100%;margin-top:12px;padding:9px;border:1px solid #e3c7c1;border-radius:9px;color:#a34e43;background:#fff8f6;font-size:.78rem;font-weight:700}.storage-note{margin:0 4px;color:#5c6b64;font-size:.78rem;line-height:1.6;word-break:break-all}.clear-button:hover{background:#a34e43;color:#fff}
 .viewer-column{background:#fffefa}.status{min-height:52px;padding:9px 18px;border-color:#e9ebe7;background:#fffefa}.status:before{content:"正在閱讀";padding:4px 8px;border-radius:6px;color:#996a3d;background:#f5eadc;font-size:.65rem;font-weight:800;letter-spacing:.06em}#bookTitle{font-family:"Noto Serif TC","PMingLiU",serif;font-size:.92rem}.progress-track{width:130px;background:#e7e9e5}#progressBar{background:linear-gradient(90deg,var(--accent),#dfb177)}#viewer{height:calc(var(--reader-height) - 52px);min-height:480px;background:#fffefa}
 .navbar{position:sticky;z-index:8;bottom:14px;width:max-content;min-width:310px;margin:12px auto 0;padding:7px;border:1px solid rgba(255,255,255,.8);border-radius:999px;background:rgba(255,254,250,.90);box-shadow:0 14px 35px rgba(36,50,47,.16);backdrop-filter:blur(18px)}.nav-button{display:flex;align-items:center;justify-content:center;gap:10px;min-width:140px;min-height:43px;padding:8px 16px;border-radius:999px;color:#fff;background:var(--primary);font-weight:750}.nav-button span[aria-hidden]{font-size:1.5rem;line-height:.7}.nav-button:hover:not(:disabled){background:var(--primary-hover)}.nav-button:disabled{opacity:.35;cursor:not-allowed}
 .loading-box{border-radius:18px;background:#fffefa}.spinner{border-color:#e3e9e5;border-top-color:var(--accent)}.toast{border-radius:999px;background:#263b35}
@@ -702,6 +702,7 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
       <div id="catalogPanel" class="side-panel active">
       <section class="sidebar-section"><div class="side-heading"><h2>書籍目錄</h2><span>CHAPTERS</span></div><ul id="toc"><li class="empty">尚未載入目錄</li></ul></section>
       <section class="sidebar-section"><div class="side-heading"><h2>我的書籤</h2><span>BOOKMARKS</span></div><ul id="bookmarks"><li class="empty">尚無書籤</li></ul><button id="clearBookmarks" class="clear-button">清除全部書籤</button></section>
+      <section class="sidebar-section"><div class="side-heading"><h2>裝置儲存</h2><span>STORAGE</span></div><p id="storageNote" class="storage-note" aria-live="polite">尚未記住任何書。</p><button id="forgetBook" class="clear-button" type="button">清除已記住的書</button></section>
       </div>
       <div id="searchPanel" class="side-panel">
         <section class="search-section">
@@ -1154,9 +1155,66 @@ async function readFile(file){
   if(!file)return;
   if(!/\.epub$/i.test(file.name)){ toast('請選擇副檔名為 .epub 的檔案'); return; }
   if(file.size>250*1024*1024&&!confirm('此 EPUB 超過 250 MB，手機載入可能較慢或記憶體不足。仍要繼續嗎？'))return;
-  try{ const data=await file.arrayBuffer(); await loadBook(data,file); }
+  try{ const data=await file.arrayBuffer(); await loadBook(data,file); rememberLastBook(file,data); }
   catch(err){ console.error(err); toast('無法讀取檔案，請確認檔案未損壞'); }
 }
+
+// ===== 記住上次開啟的書：EPUB 存進這台裝置的 IndexedDB，下次開啟自動載入 =====
+// （純本機儲存，不會上傳；可在側欄「裝置儲存」清除）
+const BOOK_DB='mo-reader',BOOK_STORE='books',BOOK_KEY='last',BOOK_MAX_BYTES=100*1024*1024;
+let lastBookMeta=null;
+function openBookDb(){
+  return new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){reject(new Error('此瀏覽器不支援 IndexedDB'));return;}
+    const req=indexedDB.open(BOOK_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(BOOK_STORE))db.createObjectStore(BOOK_STORE);};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('無法開啟本機資料庫'));
+  });
+}
+function idbRun(mode,fn){
+  return openBookDb().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(BOOK_STORE,mode);
+    let out;
+    try{ out=fn(tx.objectStore(BOOK_STORE)); }catch(err){ db.close(); reject(err); return; }
+    tx.oncomplete=()=>{ db.close(); resolve(out&&'result' in out?out.result:out); };
+    tx.onerror=()=>{ db.close(); reject(tx.error); };
+    tx.onabort=()=>{ db.close(); reject(tx.error); };
+  }));
+}
+const idbGetLast=()=>idbRun('readonly',s=>s.get(BOOK_KEY));
+const idbPutLast=v=>idbRun('readwrite',s=>s.put(v,BOOK_KEY));
+const idbDelLast=()=>idbRun('readwrite',s=>s.delete(BOOK_KEY));
+function refreshStorageNote(){
+  const note=$('storageNote'); if(!note)return;
+  note.textContent=lastBookMeta
+    ?`已記住《${lastBookMeta.name}》（${(lastBookMeta.size/1048576).toFixed(1)} MB），下次開啟會自動載入。`
+    :'尚未記住任何書。';
+}
+async function rememberLastBook(file,data){
+  lastBookMeta={name:file.name,size:file.size,lastModified:file.lastModified||0,type:file.type||'application/epub+zip',savedAt:Date.now()};
+  refreshStorageNote();
+  if(file.size>BOOK_MAX_BYTES){ toast('這本書超過 100 MB，這次不記住（下次請重新選擇）'); return; }
+  try{ await idbPutLast({meta:lastBookMeta,blob:new Blob([data],{type:lastBookMeta.type})}); }
+  catch(err){ console.warn('無法記住這本書',err); lastBookMeta=null; refreshStorageNote(); toast('裝置空間不足，這次無法記住這本書'); }
+}
+async function restoreLastBook(){
+  try{
+    const rec=await idbGetLast();
+    if(!rec?.blob||!rec.meta)return false;
+    lastBookMeta=rec.meta; refreshStorageNote();
+    const file=new File([rec.blob],rec.meta.name,{type:rec.meta.type||'application/epub+zip',lastModified:rec.meta.lastModified||Date.now()});
+    toast(`自動載入上次的書：${rec.meta.name}`);
+    await loadBook(await file.arrayBuffer(),file);
+    return true;
+  }catch(err){ console.warn('自動載入上次的書失敗',err); return false; }
+}
+$('forgetBook')?.addEventListener('click',async()=>{
+  try{ await idbDelLast(); }catch(err){ console.warn(err); }
+  lastBookMeta=null; refreshStorageNote(); toast('已清除記住的書，下次請重新選擇檔案');
+});
+refreshStorageNote();
+restoreLastBook();
 els.file.addEventListener('change',e=>readFile(e.target.files[0]));
 ['dragenter','dragover'].forEach(type=>$('dropZone').addEventListener(type,e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';}));
 $('dropZone').addEventListener('drop',e=>{e.preventDefault();readFile(e.dataTransfer.files[0]);});
