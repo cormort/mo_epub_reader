@@ -623,6 +623,20 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
 .pwa-notice{position:fixed;z-index:10000;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:none;align-items:center;gap:10px;width:min(92vw,560px);padding:12px 14px;border:1px solid rgba(255,255,255,.35);border-radius:16px;color:#fff;background:#263b35;box-shadow:0 14px 35px rgba(0,0,0,.25)}
 .pwa-notice.show{display:flex}.pwa-notice span{flex:1;line-height:1.45}.pwa-notice button{min-height:40px;padding:8px 12px;border-radius:10px;font-weight:750}.pwa-notice .primary{color:#263b35;background:#f3e7d8}.pwa-notice .secondary{color:#fff;background:transparent;border:1px solid rgba(255,255,255,.45)}
 @media(max-width:520px){.pwa-notice{align-items:stretch;flex-wrap:wrap}.pwa-notice span{flex-basis:100%}.pwa-notice button{flex:1}}
+/* 閱讀位置捲軸：可拖曳／點擊快速跳到全書任何位置（原本只有一條不能點的進度線） */
+.status .progress-track{position:relative;height:20px;border-radius:999px;background:#e7e9e5;cursor:pointer;touch-action:none;overflow:visible}
+.status .progress-track:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+#progressBar{position:relative;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),#dfb177);pointer-events:none}
+.progress-thumb{position:absolute;top:50%;left:0;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fff;border:2px solid var(--primary);transform:translateY(-50%);box-shadow:0 2px 6px rgba(20,38,33,.28);pointer-events:none}
+.progress-track.dragging .progress-thumb{transform:translateY(-50%) scale(1.18)}
+@media(max-width:800px){.status .progress-track{display:block;flex:1 1 auto;min-width:64px;margin:0 4px}}
+/* 連續捲動模式：讓 #viewer 自己出現原生捲軸（epub.js 會把內層容器撐到內容全高） */
+/* 連續捲動模式：epub.js 會把內層容器撐成內容全高，所以釘住高度、讓內層容器自己出現原生捲軸 */
+#viewer.flow-scrolled{height:calc(var(--reader-height) - 52px)!important;max-height:calc(var(--reader-height) - 52px)!important;overflow:hidden}
+#viewer.flow-scrolled .epub-container{height:100%!important;max-height:100%!important;overflow-y:auto!important;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+#viewer.flow-scrolled .epub-container::-webkit-scrollbar{width:10px}
+#viewer.flow-scrolled .epub-container::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(49,91,82,.45)}
+#viewer.flow-scrolled .epub-container::-webkit-scrollbar-track{background:transparent}
 
 </style>
 
@@ -666,6 +680,10 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
       <input id="fontSizeSlider" type="range" min="60" max="200" value="100" step="10" aria-label="字體大小">
       <button id="fontUp" class="icon-btn" aria-label="放大字體">A＋</button>
       <span id="fontSizeValue">100%</span>
+    </div>
+    <div class="group">
+      <span class="group-label">翻頁方式</span>
+      <button id="flowToggle" class="icon-btn" type="button" aria-pressed="false" title="切換翻頁／連續捲動"><span aria-hidden="true">⇅</span><span class="button-text">捲動</span></button>
     </div>
     <div class="group" id="themeGroup">
       <span class="group-label">閱讀主題</span>
@@ -719,7 +737,7 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
       </div>
     </aside>
     <section class="viewer-column">
-      <div class="status"><span id="bookTitle">未載入書籍</span><span id="progressText">0%</span><div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div></div>
+      <div class="status"><span id="bookTitle">未載入書籍</span><span id="progressText">0%</span><div class="progress-track" id="progressTrack" role="slider" tabindex="0" aria-label="閱讀位置，可拖曳或點擊跳章" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progressBar"></div><span class="progress-thumb" id="progressThumb" aria-hidden="true"></span></div></div>
       <div id="viewer"></div><div id="tapHint" class="tap-hint" aria-hidden="true"><span>點左側上一頁</span><span>左右滑動翻頁</span><span>點右側下一頁</span></div>
     </section>
   </main>
@@ -945,7 +963,26 @@ function updateLocation(location){
   else if(typeof location.start?.percentage==='number') percentage=location.start.percentage;
   const value=Math.max(0,Math.min(100,Math.round(percentage*100)));
   els.progress.textContent=`${value}%`; els.progressBar.style.width=`${value}%`;
+  const thumb=$('progressThumb'); if(thumb)thumb.style.left=`${value}%`;
+  $('progressTrack')?.setAttribute('aria-valuenow',String(value));
   applyLanguage();
+}
+// ponytail: 連續捲動要用 epub.js 的 continuous manager，而 manager 只能在建立 rendition 時指定，
+// 所以「翻頁／捲動」切換是整條 rendition 重建（先記住 CFI，重建後 display 回去），不是只改 flow。
+function setFlowUi(){
+  const scrolled=readingFlow==='scrolled';
+  $('flowToggle')?.setAttribute('aria-pressed',String(scrolled));
+  const label=$('flowToggle')?.querySelector('.button-text'); if(label)label.textContent=scrolled?'翻頁':'捲動';
+}
+function createRendition(){
+  const scrolled=readingFlow==='scrolled';
+  rendition=book.renderTo('viewer',{width:'100%',height:'100%',manager:scrolled?'continuous':'default',flow:scrolled?'scrolled-doc':'paginated',spread:'none'});
+  rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); normalizeParagraphIndent(contents.document); applyThemeToDocument(contents.document,currentTheme); setupReaderInteractions(contents); });
+  rendition.on('relocated',location=>{ updateLocation(location); const cfi=location?.start?.cfi; if(cfi&&bookKey) localStorage.setItem(`epub-reader:${bookKey}:lastCfi`,cfi); });
+  rendition.on('rendered',()=>{applyLanguage();applyAppearance();});
+  els.viewer.classList.toggle('flow-scrolled',scrolled);
+  setFlowUi();
+  return rendition;
 }
 async function loadBook(data,file){
   if(speechSupported)stopSpeech();
@@ -955,14 +992,11 @@ async function loadBook(data,file){
   try {
     if(book){ try{book.destroy();}catch{} }
     els.viewer.replaceChildren(); els.toc.innerHTML='<li class="empty">正在載入目錄…</li>';
-    book=ePub(data); rendition=book.renderTo('viewer',{width:'100%',height:'100%',manager:'default',flow:'paginated',spread:'none'});
-    rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); normalizeParagraphIndent(contents.document); applyThemeToDocument(contents.document,currentTheme); setupReaderInteractions(contents); });
+    book=ePub(data); createRendition();
     const metadata=await book.loaded.metadata;
     const unique=metadata.identifier||`${file.name}:${file.size}:${file.lastModified}`;
     bookKey=encodeURIComponent(unique); els.title.textContent=safeText(metadata.title,file.name.replace(/\.epub$/i,''));
     loadBookmarks(); setupThemes(); setReaderVisible(true);
-    rendition.on('relocated',location=>{ updateLocation(location); const cfi=location?.start?.cfi; if(cfi&&bookKey) localStorage.setItem(`epub-reader:${bookKey}:lastCfi`,cfi); });
-    rendition.on('rendered',()=>{applyLanguage();applyAppearance();});
     const savedCfi=localStorage.getItem(`epub-reader:${bookKey}:lastCfi`);
     try{ await rendition.display(savedCfi||undefined); }catch{ await rendition.display(); }
     const navigation=await book.loaded.navigation;
@@ -1262,6 +1296,64 @@ $('searchToggle').addEventListener('click',()=>openSidePanel('searchPanel',true)
 $('sidebarClose').addEventListener('click',closeSidebarOnMobile); $('mobileBackdrop').addEventListener('click',closeSidebarOnMobile);
 document.querySelectorAll('.side-tab').forEach(btn=>btn.addEventListener('click',()=>openSidePanel(btn.dataset.panel,btn.dataset.panel==='searchPanel')));
 els.fontSlider.addEventListener('input',e=>setFont(e.target.value));
+
+// ===== 閱讀位置捲軸：拖曳或點擊可快速跳到全書任何位置 =====
+let seekTimer=0,seeking=false;
+function seekMark(ratio){
+  const pct=Math.round(ratio*100);
+  els.progress.textContent=`${pct}%`; els.progressBar.style.width=`${pct}%`;
+  const thumb=$('progressThumb'); if(thumb)thumb.style.left=`${pct}%`;
+  $('progressTrack')?.setAttribute('aria-valuenow',String(pct));
+}
+function ratioFromEvent(e){ const r=$('progressTrack').getBoundingClientRect(); return r.width?((e.clientX-r.left)/r.width):0; }
+function seekToRatio(ratio){
+  if(!rendition||!book)return;
+  ratio=Math.max(0,Math.min(1,ratio));
+  seekMark(ratio);
+  if(!locationsReady){ toast('書本位置還在計算，請稍候再拖動'); return; }
+  const cfi=book.locations.cfiFromPercentage(ratio);
+  if(!cfi)return;
+  clearTimeout(seekTimer);
+  seekTimer=setTimeout(()=>{ rendition?.display(cfi).catch(()=>{}); },90);
+}
+const progressTrack=$('progressTrack');
+if(progressTrack){
+  progressTrack.addEventListener('pointerdown',e=>{
+    if(!rendition)return;
+    seeking=true; progressTrack.classList.add('dragging');
+    try{ progressTrack.setPointerCapture(e.pointerId); }catch{}
+    seekToRatio(ratioFromEvent(e)); e.preventDefault();
+  });
+  progressTrack.addEventListener('pointermove',e=>{ if(seeking)seekToRatio(ratioFromEvent(e)); });
+  const endSeek=e=>{ if(!seeking)return; seeking=false; progressTrack.classList.remove('dragging'); seekToRatio(ratioFromEvent(e)); };
+  progressTrack.addEventListener('pointerup',endSeek);
+  progressTrack.addEventListener('pointercancel',()=>{ seeking=false; progressTrack.classList.remove('dragging'); });
+  progressTrack.addEventListener('keydown',e=>{
+    if(!rendition||!locationsReady)return;
+    let cur=0; try{ cur=book.locations.percentageFromCfi(rendition.currentLocation()?.start?.cfi||'')||0; }catch{}
+    if(e.key==='ArrowRight'||e.key==='ArrowUp'){ seekToRatio(cur+0.02); e.preventDefault(); }
+    if(e.key==='ArrowLeft'||e.key==='ArrowDown'){ seekToRatio(cur-0.02); e.preventDefault(); }
+  });
+}
+
+// ===== 翻頁／連續捲動切換（捲動模式有原生捲軸，長距離移動比一直翻頁快）=====
+let readingFlow=localStorage.getItem('epub-reader:flow')==='scrolled'?'scrolled':'paginated';
+let flowBusy=false;
+async function applyFlow(next,silent){
+  const target=next==='scrolled'?'scrolled':'paginated';
+  const changed=target!==readingFlow;
+  readingFlow=target; localStorage.setItem('epub-reader:flow',target); setFlowUi();
+  if(!book||!changed||flowBusy)return;
+  flowBusy=true;
+  const anchor=rendition?.currentLocation()?.start?.cfi;
+  try{ book.rendition?.destroy?.(); }catch{}
+  rendition=null; els.viewer.replaceChildren();
+  createRendition(); setupThemes();
+  try{ await rendition.display(anchor||undefined); }catch{}
+  flowBusy=false;
+  if(!silent)toast(target==='scrolled'?'已切換為連續捲動模式':'已切換為翻頁模式');
+}
+$('flowToggle')?.addEventListener('click',()=>applyFlow(readingFlow==='scrolled'?'paginated':'scrolled'));
 $('fontUp').addEventListener('click',()=>setFont(fontSize+10)); $('fontDown').addEventListener('click',()=>setFont(fontSize-10));
 $('themeGroup').addEventListener('click',e=>{
   const btn=e.target.closest('[data-theme]'); if(!btn||!themeStyles[btn.dataset.theme])return;
