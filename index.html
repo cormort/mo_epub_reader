@@ -637,7 +637,7 @@ button,.btn,.file-label,.nav-button,.icon-btn,.side-tab{touch-action:manipulatio
   <header class="header card">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">墨</div>
-      <div><div class="eyebrow">OFFLINE EPUB READER</div><h1>墨閱</h1><p>安靜、專注且完全離線的閱讀空間 · v2.1.0</p></div>
+      <div><div class="eyebrow">OFFLINE EPUB READER</div><h1>墨閱</h1><p>安靜、專注且完全離線的閱讀空間 · v2.1.1</p></div>
     </div>
     <div class="file-actions">
       <label class="file-label" for="epubFile"><span aria-hidden="true">＋</span> 開啟 EPUB</label>
@@ -740,10 +740,10 @@ let bookKey='', bookmarks=[], locationsReady=false, conversionTimer=0, toastTime
 let searchToken=0, searchMatches=[], highlightedCfis=[], touchStart=null, hintTimer=0;
 const converters = { traditional:null, simplified:null };
 const themeStyles = {
-  default:{body:{color:'#263238',background:'#ffffff'},a:{color:'#1769aa'}},
-  sepia:{body:{color:'#4a3828',background:'#f4ecd8'},a:{color:'#8a5a2b'}},
-  green:{body:{color:'#25362c',background:'#dfeee2'},a:{color:'#28633b'}},
-  night:{body:{color:'#d7dde3',background:'#172027'},a:{color:'#83bdf0'}}
+  default:{color:'#263238',background:'#ffffff',link:'#1769aa',muted:'#607d8b'},
+  sepia:{color:'#4a3828',background:'#f4ecd8',link:'#8a5a2b',muted:'#7a6855'},
+  green:{color:'#25362c',background:'#dfeee2',link:'#28633b',muted:'#536b5a'},
+  night:{color:'#d7dde3',background:'#172027',link:'#83bdf0',muted:'#aab6bf'}
 };
 function toast(message){ clearTimeout(toastTimer); els.toast.textContent=message; els.toast.classList.add('show'); toastTimer=setTimeout(()=>els.toast.classList.remove('show'),2600); }
 function setLoading(show,text='正在載入 EPUB…'){ els.loadingText.textContent=text; els.loading.classList.toggle('show',show); }
@@ -795,11 +795,33 @@ function updateActiveToc(href){
     a.classList.toggle('active',!!target&&(current.endsWith(target)||target.endsWith(current)));
   });
 }
+function themeCss(name=currentTheme){
+  const t=themeStyles[name]||themeStyles.default;
+  return `:root{color-scheme:${name==='night'?'dark':'light'}!important}html,body{background:${t.background}!important;color:${t.color}!important}body,body *{border-color:${t.muted}55}p,div,span,li,blockquote,section,article,h1,h2,h3,h4,h5,h6{color:inherit}a,a:visited{color:${t.link}!important}hr{border-color:${t.muted}!important}table,th,td{background-color:transparent!important;color:inherit!important}`;
+}
+function applyThemeToDocument(doc,name=currentTheme){
+  if(!doc?.head)return;
+  let style=doc.getElementById('mo-reader-theme-override');
+  if(!style){style=doc.createElement('style');style.id='mo-reader-theme-override';doc.head.append(style);}
+  style.textContent=themeCss(name);
+  doc.documentElement.dataset.moTheme=name;
+}
 function setupThemes(){
-  Object.entries(themeStyles).forEach(([name,styles])=>rendition.themes.register(name,styles));
+  Object.entries(themeStyles).forEach(([name,t])=>rendition.themes.register(name,{
+    'html, body':{'background':`${t.background} !important`,'color':`${t.color} !important`},
+    'a, a:visited':{'color':`${t.link} !important`}
+  }));
   applyAppearance();
 }
-function applyAppearance(){ if(!rendition)return; rendition.themes.select(currentTheme); rendition.themes.fontSize(`${fontSize}%`); els.fontValue.textContent=`${fontSize}%`; }
+function applyAppearance(){
+  if(!rendition)return;
+  rendition.themes.select(currentTheme);
+  rendition.themes.fontSize(`${fontSize}%`);
+  rendition.getContents().forEach(content=>applyThemeToDocument(content.document,currentTheme));
+  const t=themeStyles[currentTheme]||themeStyles.default;
+  els.viewer.style.background=t.background;
+  els.fontValue.textContent=`${fontSize}%`;
+}
 function setFont(value){ fontSize=Math.max(60,Math.min(200,Number(value)||100)); els.fontSlider.value=fontSize; applyAppearance(); localStorage.setItem('epub-reader:fontSize',String(fontSize)); }
 // ponytail: 字典樹改為用到才建（原本開檔就同步建兩棵約 1MB 的 Trie，手機會卡住數秒）
 function getConverter(){
@@ -862,13 +884,13 @@ async function loadBook(data,file){
     if(book){ try{book.destroy();}catch{} }
     els.viewer.replaceChildren(); els.toc.innerHTML='<li class="empty">正在載入目錄…</li>';
     book=ePub(data); rendition=book.renderTo('viewer',{width:'100%',height:'100%',manager:'default',flow:'paginated',spread:'none'});
-    rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); setupReaderInteractions(contents); });
+    rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); applyThemeToDocument(contents.document,currentTheme); setupReaderInteractions(contents); });
     const metadata=await book.loaded.metadata;
     const unique=metadata.identifier||`${file.name}:${file.size}:${file.lastModified}`;
     bookKey=encodeURIComponent(unique); els.title.textContent=safeText(metadata.title,file.name.replace(/\.epub$/i,''));
     loadBookmarks(); setupThemes(); setReaderVisible(true);
     rendition.on('relocated',location=>{ updateLocation(location); const cfi=location?.start?.cfi; if(cfi&&bookKey) localStorage.setItem(`epub-reader:${bookKey}:lastCfi`,cfi); });
-    rendition.on('rendered',()=>applyLanguage());
+    rendition.on('rendered',()=>{applyLanguage();applyAppearance();});
     const savedCfi=localStorage.getItem(`epub-reader:${bookKey}:lastCfi`);
     try{ await rendition.display(savedCfi||undefined); }catch{ await rendition.display(); }
     const navigation=await book.loaded.navigation;
@@ -1067,8 +1089,10 @@ document.querySelectorAll('.side-tab').forEach(btn=>btn.addEventListener('click'
 els.fontSlider.addEventListener('input',e=>setFont(e.target.value));
 $('fontUp').addEventListener('click',()=>setFont(fontSize+10)); $('fontDown').addEventListener('click',()=>setFont(fontSize-10));
 $('themeGroup').addEventListener('click',e=>{
-  const btn=e.target.closest('[data-theme]'); if(!btn)return; currentTheme=btn.dataset.theme;
-  document.querySelectorAll('[data-theme]').forEach(x=>x.classList.toggle('active',x===btn)); applyAppearance(); localStorage.setItem('epub-reader:theme',currentTheme);
+  const btn=e.target.closest('[data-theme]'); if(!btn||!themeStyles[btn.dataset.theme])return;
+  currentTheme=btn.dataset.theme;
+  document.querySelectorAll('#themeGroup [data-theme]').forEach(x=>{const active=x===btn;x.classList.toggle('active',active);x.setAttribute('aria-pressed',String(active));});
+  applyAppearance();localStorage.setItem('epub-reader:theme',currentTheme);toast(`已切換為${btn.textContent.trim()}主題`);
 });
 $('bookmarkBtn').addEventListener('click',()=>{
   const location=rendition?.currentLocation(); const cfi=location?.start?.cfi; if(!cfi){toast('目前位置尚未就緒');return;}
