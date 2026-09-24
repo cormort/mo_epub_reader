@@ -861,7 +861,33 @@ function normalizeAlign(doc){
     if(cs.textAlign==='right'||cs.textAlign==='end') el.style.setProperty('text-align','justify','important');
   });
 }
+// ponytail: 台灣的書常見「CSS text-indent:2em」＋「段首又自己打了兩個全形空白」，兩者相加會變成 4 個字。
+// 這裡把中文正文段落統一成 2 個全形字：先吃掉打在文字裡的段首空白，再用 CSS 補上 text-indent:2em。
+function normalizeParagraphIndent(doc){
+  if(!doc?.body||doc.__moIndentDone)return;
+  doc.__moIndentDone=true;
+  const win=doc.defaultView; if(!win)return;
+  let style=doc.getElementById('mo-reader-typography');
+  if(!style){style=doc.createElement('style');style.id='mo-reader-typography';style.textContent='p.mo-indent{text-indent:2em!important}';doc.head.append(style);}
+  doc.body.querySelectorAll('p').forEach(p=>{
+    if(p.closest('figure,figcaption,blockquote,table,pre,code,hgroup'))return;
+    if(p.hasAttribute('align'))return;
+    if(/center|right|title|author|cover|logo|caption/i.test((p.getAttribute('style')||'')+' '+String(p.className||'')))return;
+    if(!/[\u3400-\u9fff]/.test(p.textContent||''))return;          // 只處理中文段落，英文書維持原樣
+    const cs=win.getComputedStyle(p);
+    if(cs.textAlign==='center'||cs.textAlign==='right')return;
+    for(let n=p.firstChild;n;n=n.nextSibling){
+      if(n.nodeType===3){
+        const v=n.nodeValue.replace(/^[\u3000\u00a0 ]+/,'');
+        if(v!==n.nodeValue)n.nodeValue=v;
+        if(v.length)break;
+      }else if(n.nodeType===1&&n.tagName!=='BR')break;
+    }
+    p.classList.add('mo-indent');
+  });
+}
 function convertDocument(doc){
+
   if(!doc?.body||doc.__readerConvertedTo===targetChinese)return;
   const converter=getConverter(); if(!converter)return;
   const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT,{acceptNode(node){
@@ -901,7 +927,7 @@ async function loadBook(data,file){
     if(book){ try{book.destroy();}catch{} }
     els.viewer.replaceChildren(); els.toc.innerHTML='<li class="empty">正在載入目錄…</li>';
     book=ePub(data); rendition=book.renderTo('viewer',{width:'100%',height:'100%',manager:'default',flow:'paginated',spread:'none'});
-    rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); applyThemeToDocument(contents.document,currentTheme); setupReaderInteractions(contents); });
+    rendition.hooks.content.register(contents=>{ convertDocument(contents.document); normalizeAlign(contents.document); normalizeParagraphIndent(contents.document); applyThemeToDocument(contents.document,currentTheme); setupReaderInteractions(contents); });
     const metadata=await book.loaded.metadata;
     const unique=metadata.identifier||`${file.name}:${file.size}:${file.lastModified}`;
     bookKey=encodeURIComponent(unique); els.title.textContent=safeText(metadata.title,file.name.replace(/\.epub$/i,''));
